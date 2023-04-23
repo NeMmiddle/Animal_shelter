@@ -13,19 +13,14 @@ from database import get_db
 router = APIRouter(prefix="/cats", tags=["Cats"])
 
 
-# @router.post("/photos/", response_model=Photo)
-# def create_photo_view(photo: PhotoCreate, db: Session = Depends(get_db)):
-#     return create_photo(db, photo)
-
-
 @router.get("/all/", response_model=list[Cat])
-def read_cats_view(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def get_all_cats(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     cats = get_cats(db, skip=skip, limit=limit)
     return cats
 
 
 @router.get("/{cat_id}/", response_model=Cat)
-def read_cat_id(cat_id: int, db: Session = Depends(get_db)):
+def get_cat_by_id(cat_id: int, db: Session = Depends(get_db)):
     cat = get_cat(db, cat_id=cat_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Cat not found")
@@ -33,35 +28,36 @@ def read_cat_id(cat_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{cat_id}/photos/", response_model=CatWithPhotos)
-def read_cat_view(cat_id: int, db: Session = Depends(get_db)):
+def get_cat_photos(cat_id: int, db: Session = Depends(get_db)):
     cat = get_cat_with_photos(db, cat_id=cat_id)
     return cat
 
 
 @router.post("/", response_model=Cat)
-def create_cat_view(cat: CatCreate, db: Session = Depends(get_db)):
+def create_cat_record(cat: CatCreate, db: Session = Depends(get_db)):
     return create_cat(db, cat)
 
 
 @router.post("/{cat_id}/photos/")
-def upload_cat_photos_view(cat_id: int, files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
+def upload_cat_photos(cat_id: int, files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
     cat = get_cat(db, cat_id=cat_id)
     if not cat:
-        return {"detail": "Cat not found"}
+        raise HTTPException(status_code=404, detail="Cat not found")
     for file in files:
         photo = PhotoCreate(url=file.filename, cat_id=cat_id)
         create_photo(db, photo)
 
-        if not os.path.exists(f"uploads/photo_cats/{cat_id}_{cat.name}/"):
-            os.makedirs(f"uploads/photo_cats/{cat_id}_{cat.name}/")
+        photo_dir = os.path.join("uploads/photo_cats", f"{cat_id}_{cat.name}")
+        if not os.path.exists(photo_dir):
+            os.makedirs(photo_dir)
 
-        with open(f"uploads/photo_cats/{cat_id}_{cat.name}/{file.filename}", "wb") as buffer:
+        with open(os.path.join(photo_dir, file.filename), "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
     return {"detail": "Photos uploaded successfully"}
 
 
 @router.delete("/{cat_id}")
-def delete_cat_id(cat_id: int, db: Session = Depends(get_db)):
+def delete_cat_by_id(cat_id: int, db: Session = Depends(get_db)):
     cat = get_cat(db, cat_id=cat_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Cat not found")
@@ -70,7 +66,7 @@ def delete_cat_id(cat_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{cat_id}", response_model=Cat)
-def update_cat_view(cat_id: int, cat_update: CatUpdate, db: Session = Depends(get_db)):
+def update_cat_record(cat_id: int, cat_update: CatUpdate, db: Session = Depends(get_db)):
     db_cat = get_cat(db, cat_id=cat_id)
     if not db_cat:
         raise HTTPException(status_code=404, detail="Cat not found")
