@@ -1,5 +1,6 @@
 import os
 import shutil
+from typing import List
 
 from fastapi import APIRouter, Depends, File, UploadFile
 
@@ -41,16 +42,17 @@ def create_cat_view(cat: CatCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/{cat_id}/photos/")
-def upload_cat_photo_view(cat_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+def upload_cat_photos_view(cat_id: int, files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
     cat = get_cat(db, cat_id=cat_id)
     if not cat:
         return {"detail": "Cat not found"}
-    photo = PhotoCreate(url=file.filename, cat_id=cat_id)
-    create_photo(db, photo)
+    for file in files:
+        photo = PhotoCreate(url=file.filename, cat_id=cat_id)
+        create_photo(db, photo)
 
-    if not os.path.exists(f"uploads/photo_cats/{cat_id}_{cat.name}/"):
-        os.makedirs(f"uploads/photo_cats/{cat_id}_{cat.name}/")
+        if not os.path.exists(f"uploads/photo_cats/{cat_id}_{cat.name}/"):
+            os.makedirs(f"uploads/photo_cats/{cat_id}_{cat.name}/")
 
-    with open(f"uploads/photo_cats/{cat_id}_{cat.name}/{file.filename}", "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    return {"detail": "Photo uploaded successfully"}
+        with open(f"uploads/photo_cats/{cat_id}_{cat.name}/{file.filename}", "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    return {"detail": "Photos uploaded successfully"}
