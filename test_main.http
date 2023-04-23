@@ -1,0 +1,11 @@
+# Test your FastAPI endpoints
+
+GET http://127.0.0.1:8000/cats/all/
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/cats/1/photos
+Accept: application/json
+
+###
