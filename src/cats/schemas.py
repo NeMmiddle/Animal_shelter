@@ -21,6 +21,13 @@ class Cat(CatBase):
         orm_mode = True
 
 
+class CatUpdate(CatBase):
+    pass
+
+    class Config:
+        orm_mode = True
+
+
 class PhotoBase(BaseModel):
     url: str
     cat_id: int
