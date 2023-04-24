@@ -1,3 +1,6 @@
+import os
+import shutil
+
 from sqlalchemy import delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.future import select
@@ -38,6 +41,10 @@ async def get_cat_with_photos(db: AsyncSession, cat_id: int):
 
 
 async def delete_cat(db: AsyncSession, cat: Cat):
+    photo_dir = os.path.join("uploads/photo_cats", f"{cat.id}_{cat.name}")
+    if os.path.exists(photo_dir):
+        shutil.rmtree(photo_dir)
+
     subquery = delete(Photo).where(Photo.cat_id == cat.id)
     await db.execute(subquery)
 
