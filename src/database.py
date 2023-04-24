@@ -1,24 +1,28 @@
-from sqlalchemy import MetaData, create_engine
+from sqlalchemy import MetaData
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.orm import sessionmaker, scoped_session
 
 from config import DB_HOST, DB_NAME, DB_PASS, DB_PORT, DB_USER
 
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 metadata = MetaData()
 
 Base = declarative_base()
 
-engine = create_engine(DATABASE_URL, poolclass=NullPool, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=True, future=True)
 
-SessionLocal = sessionmaker(engine, autocommit=False, autoflush=False)
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False, autoflush=False, autocommit=False)
+
+SessionLocal = scoped_session(async_session)
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def create_database():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def get_db():
+    async with SessionLocal() as session:
+        yield session
