@@ -18,15 +18,7 @@ async def get_all_cats(skip: int = 0, limit: int = 100, db=Depends(get_db)):
     return cats
 
 
-@router.get("/{cat_id}/", response_model=Cat)
-async def get_cat_by_id(cat_id: int, db=Depends(get_db)):
-    cat = await get_cat(db, cat_id=cat_id)
-    if not cat:
-        raise HTTPException(status_code=404, detail="Cat not found")
-    return cat
-
-
-@router.get("/{cat_id}/photos/", response_model=CatWithPhotos)
+@router.get("/{cat_id}/", response_model=CatWithPhotos)
 async def get_cat_photos(cat_id: int, db=Depends(get_db)):
     cat = await get_cat_with_photos(db, cat_id=cat_id)
     if not cat:

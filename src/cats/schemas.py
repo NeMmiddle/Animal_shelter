@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List
 
 from pydantic import BaseModel
@@ -5,9 +6,11 @@ from pydantic import BaseModel
 
 class CatBase(BaseModel):
     name: str
-    species: str
-    breed: str
     age: int
+    gender: str
+    about: str
+    sterilized: bool
+    views: int
 
 
 class CatCreate(CatBase):
@@ -16,6 +19,8 @@ class CatCreate(CatBase):
 
 class Cat(CatBase):
     id: int
+    registered_at: datetime
+    views: int
 
     class Config:
         orm_mode = True
