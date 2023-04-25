@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from cats.schemas import Cat, CatCreate, CatUpdate, CatWithPhotos, PhotoCreate
-from cats.service import (create_cat, create_cat_photos,
+from cats.service import (create_cat_photos,
                           create_cat_with_photos, delete_cat, get_cat,
                           get_cat_with_photos, get_cats, update_cat)
 from database import get_db
@@ -38,11 +38,12 @@ async def create_complete_cat_model(
         gender: str = Form(default="male"),
         about: str = Form(default="about"),
         sterilized: bool = Form(default=True),
-        files: List[UploadFile] = File(...),
+        files: List[UploadFile] = File(None),
         db=Depends(get_db),
 ):
     """
-    We send a form to fill in the model of the cat and its photos.
+    Send a form to fill in the model of the cat and its photos.
+    (Photos do not need to be added immediately, this can be done later using the 'upload_cat_photos' router)
     And also inside the create_cat_with_photos method we save photos locally
     using the save_photo_to_directory internal method.
     """
@@ -53,14 +54,6 @@ async def create_complete_cat_model(
     cat = await create_cat_with_photos(db, cat, files)
     returning_cat = await get_cat_with_photos(db, cat_id=cat.id)
     return returning_cat
-
-
-@router.post("/only_cat", response_model=Cat)
-async def create_cat_without_pictures(cat: CatCreate, db=Depends(get_db)):
-    """
-    Create a cat model without photos.
-    """
-    return await create_cat(db, cat)
 
 
 @router.post("/{cat_id}/only_photos")
