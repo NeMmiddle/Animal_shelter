@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import List, Dict, Union
 
 from pydantic import BaseModel
 
@@ -10,20 +10,10 @@ class CatBase(BaseModel):
     gender: str
     about: str
     sterilized: bool
-    views: int
 
 
 class CatCreate(CatBase):
     pass
-
-
-class Cat(CatBase):
-    id: int
-    registered_at: datetime
-    views: int
-
-    class Config:
-        orm_mode = True
 
 
 class CatUpdate(CatBase):
@@ -43,6 +33,15 @@ class PhotoCreate(PhotoBase):
 
 
 class Photo(PhotoBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
+class Cat(CatBase):
+    registered_at: datetime
+    views: int
     id: int
 
     class Config:
