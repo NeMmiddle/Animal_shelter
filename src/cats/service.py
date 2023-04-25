@@ -4,29 +4,49 @@ from typing import List
 
 from fastapi import UploadFile
 from sqlalchemy import delete
-from sqlalchemy.orm import selectinload
-from sqlalchemy.future import select
-from cats.models import Cat, Photo
-from cats.schemas import CatCreate, PhotoCreate, CatUpdate
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
+
+from cats.models import Cat, Photo
+from cats.schemas import CatCreate, CatUpdate, PhotoCreate
 
 
 async def get_cats(db: AsyncSession, skip: int, limit: int):
+    """
+    Get all the added cats from the database.
+    """
     result = await db.execute(select(Cat).offset(skip).limit(limit))
     return result.scalars().all()
 
 
 async def get_cat(db: AsyncSession, cat_id: int):
+    """
+    Get one cat for him id.
+    """
     result = await db.execute(select(Cat).filter(Cat.id == cat_id))
     return result.scalars().first()
 
 
 async def get_cat_with_photos(db: AsyncSession, cat_id: int):
-    result = await db.execute(select(Cat).options(selectinload(Cat.photos)).filter(Cat.id == cat_id))
+    """
+    Get the added cat and all his photos from the database.
+    """
+    result = await db.execute(
+        select(Cat).options(selectinload(Cat.photos)).filter(Cat.id == cat_id)
+    )
     return result.scalars().first()
 
 
-async def create_cat_with_photos(db: AsyncSession, cat: CatCreate, files: List[UploadFile]) -> Cat:
+async def create_cat_with_photos(
+        db: AsyncSession, cat: CatCreate, files: List[UploadFile]
+) -> Cat:
+    """
+    Save the cat and all his photos in the database.
+    Also save photos locally in the specified folder 'photo_dir'
+    using save_photo_to_directory method.
+    """
+
     db_cat = Cat(**cat.dict())
     db.add(db_cat)
     await db.flush()
@@ -46,6 +66,9 @@ async def create_cat_with_photos(db: AsyncSession, cat: CatCreate, files: List[U
 
 
 async def create_cat(db: AsyncSession, cat: CatCreate):
+    """
+    Saving a cat without its photos in the database.
+    """
     db_cat = Cat(**cat.dict())
     db.add(db_cat)
     await db.commit()
@@ -53,7 +76,12 @@ async def create_cat(db: AsyncSession, cat: CatCreate):
     return db_cat
 
 
-async def create_cat_photos(db: AsyncSession, photo: PhotoCreate, file: UploadFile, cat: Cat):
+async def create_cat_photos(
+        db: AsyncSession, photo: PhotoCreate, file: UploadFile, cat: Cat
+):
+    """
+    We add both locally and to the database the added photos of the cat
+    """
     db_photo = Photo(**photo.dict())
     db.add(db_photo)
     await db.commit()
@@ -66,6 +94,9 @@ async def create_cat_photos(db: AsyncSession, photo: PhotoCreate, file: UploadFi
 
 
 async def update_cat(db: AsyncSession, db_cat: Cat, cat_update: CatUpdate):
+    """
+    Update information about the cat by its id and save it in the database
+    """
     update_data = cat_update.dict(exclude_unset=True)
 
     for key, value in update_data.items():
@@ -78,6 +109,9 @@ async def update_cat(db: AsyncSession, db_cat: Cat, cat_update: CatUpdate):
 
 
 async def delete_cat(db: AsyncSession, cat: Cat):
+    """
+    Delete the cat locally and from the database
+    """
     photo_dir = os.path.join("uploads/photo_cats", f"{cat.id}_{cat.name}")
     if os.path.exists(photo_dir):
         shutil.rmtree(photo_dir)
