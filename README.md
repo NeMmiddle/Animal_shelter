@@ -1,7 +1,6 @@
 # Animal_shelter
 
-#### *Don't forget to change the data in the file .env. An example of filling is in the env_example file.*      
-&nbsp; 
+### *Don't forget to change the data in the file .env. An example of filling is in the env_example file.*      
 
 ### Download repositories
 ```
