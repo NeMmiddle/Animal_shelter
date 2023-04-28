@@ -45,26 +45,37 @@ async def create_cat_with_photos(db: AsyncSession, cat: CatCreate, files: Option
     Also save photos on Google Drive using Google Drive API.
     """
 
-    # Create a record of the cat in the database
-    db_cat = Cat(**cat.dict())
-    db.add(db_cat)
-    await db.flush()
+    try:
+        # Create a record of the cat in the database
+        db_cat = Cat(**cat.dict())
+        db.add(db_cat)
+        await db.flush()
 
-    # Upload photos to Google Drive and create records in the database
-    if files is not None:
-        # Upload photos to Google Drive
-        urls = await upload_photos_to_google_drive(files, db_cat.id, db_cat.name)
+        if files is not None:
+            # Upload photos to Google Drive and create records in the database
+            try:
+                # Upload photos to Google Drive
+                urls = await upload_photos_to_google_drive(files, db_cat.id, db_cat.name)
 
-        # Create a record of the photo in the database
-        for url in urls:
-            photo = PhotoCreate(url=url, cat_id=db_cat.id)
-            db_photo = Photo(**photo.dict())
-            db.add(db_photo)
-            await db.flush()
+                # Create a record of the photo in the database
+                for url in urls:
+                    photo = PhotoCreate(url=url, cat_id=db_cat.id)
+                    db_photo = Photo(**photo.dict())
+                    db.add(db_photo)
+                    await db.flush()
+            except Exception as e:
+                # If there is an error during photo upload, delete the cat record from the database
+                await db.delete(db_cat)
+                await db.flush()
+                raise e
 
-    await db.commit()
-    await db.refresh(db_cat)
-    return db_cat
+        await db.commit()
+        await db.refresh(db_cat)
+        return db_cat
+    except Exception as e:
+        # If there is an error during cat creation, rollback the database transaction
+        await db.rollback()
+        raise e
 
 
 async def create_cat_photos(

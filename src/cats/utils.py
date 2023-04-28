@@ -2,7 +2,7 @@ import io
 import pickle
 from typing import List
 
-from fastapi import UploadFile
+from fastapi import UploadFile, HTTPException
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -38,6 +38,13 @@ async def upload_photos_to_google_drive(files: List[UploadFile], cat_id: int, ca
     """
     Upload photos to Google Drive and return their URLs.
     """
+    # Check file types
+    allowed_extensions = ('.jpg', '.jpeg', '.png', '.gif')
+    for file in files:
+        if not file.filename.lower().endswith(allowed_extensions):
+            raise HTTPException(status_code=400,
+                                detail=f"File '{file.filename}' has an invalid file type."
+                                f"Only image files are allowed.")
 
     # Authorize with Google Drive API
     creds = await get_user_credentials()
