@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from cats.models import Cat, Photo
 from cats.schemas import CatCreate, CatUpdate, PhotoCreate
+from cats.utils import upload_photos_to_google_drive
 
 
 async def get_cats(db: AsyncSession, skip: int, limit: int):
@@ -38,28 +39,28 @@ async def get_cat_with_photos(db: AsyncSession, cat_id: int):
     return result.scalars().first()
 
 
-async def create_cat_with_photos(
-        db: AsyncSession, cat: CatCreate, files: Optional[List[UploadFile]]
-) -> Cat:
+async def create_cat_with_photos(db: AsyncSession, cat: CatCreate, files: Optional[List[UploadFile]]) -> Cat:
     """
     Save the cat and all his photos in the database.
-    Also save photos locally in the specified folder 'photo_dir'
-    using save_photo_to_directory method.
+    Also save photos on Google Drive using Google Drive API.
     """
 
+    # Create a record of the cat in the database
     db_cat = Cat(**cat.dict())
     db.add(db_cat)
     await db.flush()
 
-    if files:
-        for file in files:
-            photo = PhotoCreate(url=file.filename, cat_id=db_cat.id)
+    # Upload photos to Google Drive and create records in the database
+    if files is not None:
+        # Upload photos to Google Drive
+        urls = await upload_photos_to_google_drive(files, db_cat.id, db_cat.name)
+
+        # Create a record of the photo in the database
+        for url in urls:
+            photo = PhotoCreate(url=url, cat_id=db_cat.id)
             db_photo = Photo(**photo.dict())
             db.add(db_photo)
             await db.flush()
-
-            photo_dir = os.path.join("uploads/photo_cats", f"{db_cat.id}_{db_cat.name}")
-            await save_photo_to_directory(file, photo_dir)
 
     await db.commit()
     await db.refresh(db_cat)
@@ -76,9 +77,6 @@ async def create_cat_photos(
     db.add(db_photo)
     await db.commit()
     await db.refresh(db_photo)
-
-    photo_dir = os.path.join("uploads/photo_cats", f"{cat.id}_{cat.name}")
-    await save_photo_to_directory(file, photo_dir)
 
     return db_photo
 
@@ -119,5 +117,11 @@ async def save_photo_to_directory(file: UploadFile, directory: str):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-    with open(os.path.join(directory, file.filename), "wb") as buffer:
+    file_path = os.path.join(directory, file.filename)
+    if os.path.exists(file_path):
+        shutil.rmtree(directory)  # удаляем всю папку и ее содержимое
+
+    with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+
+    file.file.close()

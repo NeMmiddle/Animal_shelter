@@ -3,9 +3,9 @@ from typing import List
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from cats.schemas import Cat, CatCreate, CatUpdate, CatWithPhotos, PhotoCreate
-from cats.service import (create_cat_photos,
-                          create_cat_with_photos, delete_cat, get_cat,
-                          get_cat_with_photos, get_cats, update_cat)
+from cats.service import (create_cat_photos, create_cat_with_photos,
+                          delete_cat, get_cat, get_cat_with_photos, get_cats,
+                          update_cat)
 from database import get_db
 
 router = APIRouter(prefix="/cats", tags=["Cats"])
@@ -31,7 +31,7 @@ async def get_only_cat(cat_id: int, db=Depends(get_db)):
     return cat
 
 
-@router.post("/cat", response_model=CatWithPhotos)
+@router.post("/cat")
 async def create_complete_cat_model(
         name: str = Form(default="Сat destroyer"),
         age: int = Form(default=3),
@@ -51,17 +51,14 @@ async def create_complete_cat_model(
     cat = CatCreate(
         name=name, age=age, gender=gender, about=about, sterilized=sterilized
     )
-    cat = await create_cat_with_photos(db, cat, files)
-    returning_cat = await get_cat_with_photos(db, cat_id=cat.id)
-    return returning_cat
+    await create_cat_with_photos(db, cat, files)
+    return {"message": "Upload was successful!"}
 
 
 @router.post("/{cat_id}/only_photos")
-async def upload_cat_photos(
-        cat_id: int, files: List[UploadFile] = File(...), db=Depends(get_db)
-):
+async def upload_cat_photos_to_drive(cat_id: int, files: List[UploadFile] = File(...), db=Depends(get_db)):
     """
-    Add photos to a cat by its id.
+    Add photos to a cat by its id and upload them to Google Drive.
     """
     cat = await get_cat(db, cat_id=cat_id)
     if not cat:

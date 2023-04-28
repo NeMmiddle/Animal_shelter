@@ -1,10 +1,7 @@
 from fastapi import FastAPI
 
-from cats import models
 from cats.router import router as cats_operation
-from database import engine, create_database
-
-# models.Base.metadata.create_all(bind=engine)
+from database import create_database
 
 app = FastAPI(title="Animal Shelter")
 
