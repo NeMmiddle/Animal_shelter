@@ -2,7 +2,12 @@
 
 ### *Don't forget to change the data in the file .env. An example of filling is in the env_example file.*      
 &nbsp; 
-### You can run it as it is usually done:
+
+### Download repositories
+```
+git@github.com:NeMmiddle/Animal_shelter.git
+```
+### Creating and activating a virtual environment:
 ```
 python3 -m venv venv
 
