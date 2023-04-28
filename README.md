@@ -14,7 +14,7 @@ pip install -r requirements.txt
 ```
 
 ### In order for the photos to be saved on Google drive, you need to follow this [instructions](https://developers.google.com/drive/api/quickstart/python). As a result, we will download a json file that Google will provide us with and all we need is to add it to the root folder of our project:
-### Sample file. You can find the same example in the file: [client_secret_exemple.json](https://github.com/NeMmiddle/Animal_shelter/blob/master/client_secret_exemple.json):
+### Sample file. You can find the same example in the file: [client_secret_example.json](https://github.com/NeMmiddle/Animal_shelter/blob/master/client_secret_exemple.json):
 ```
 {
   "web": {
