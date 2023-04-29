@@ -7,6 +7,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.errors import HttpError
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
@@ -63,14 +64,19 @@ async def upload_photos_to_google_drive(files: List[UploadFile], cat_id: int, ca
     else:
         folder_id = folder[0].get('id')
 
-    # Create a folder for the cat's photos in the "Photos of cats" folder
-    folder_metadata = {
-        'name': f'{cat_id} - {cat_name}',
-        'parents': [folder_id],
-        'mimeType': 'application/vnd.google-apps.folder'
-    }
-    folder = drive_service.files().create(body=folder_metadata, fields='id').execute()
-    folder_id = folder.get('id')
+    # Check if the cat's folder exists, create it if necessary
+    query = f"mimeType='application/vnd.google-apps.folder' and name='{cat_id} - {cat_name}' and parents='{folder_id}'"
+    folder = drive_service.files().list(q=query, fields='files(id)').execute().get('files')
+    if not folder:
+        folder_metadata = {
+            'name': f'{cat_id} - {cat_name}',
+            'parents': [folder_id],
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        folder = drive_service.files().create(body=folder_metadata, fields='id').execute()
+        folder_id = folder.get('id')
+    else:
+        folder_id = folder[0].get('id')
 
     # Upload photos to the cat's folder
     urls = []
@@ -94,6 +100,8 @@ async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
     try:
         # Authorize with Google Drive API
         creds = await get_user_credentials()
+        if creds is None:
+            raise HTTPException(status_code=401, detail="Authorization required")
         drive_service = build('drive', 'v3', credentials=creds)
 
         # Find the folder with the cat's photos
@@ -111,5 +119,14 @@ async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
 
         # Delete the folder
         drive_service.files().delete(fileId=folder_id).execute()
-    except Exception as e:
-        raise e
+    except HttpError as e:
+        if e.resp.status == 401:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        elif e.resp.status == 404:
+            raise HTTPException(status_code=404, detail=f"Folder for cat with id={cat_id} not found")
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete photos from Google Drive")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to delete photos from Google Drive")
+
+

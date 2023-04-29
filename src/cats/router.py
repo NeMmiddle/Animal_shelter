@@ -2,7 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
-from cats.schemas import Cat, CatCreate, CatUpdate, CatWithPhotos, PhotoCreate
+from cats.schemas import Cat, CatCreate, CatUpdate, CatWithPhotos
 from cats.service import (create_cat_photos, create_cat_with_photos,
                           delete_cat, get_cat, get_cat_with_photos, get_cats,
                           update_cat)
@@ -56,16 +56,11 @@ async def create_complete_cat_model(
 
 
 @router.post("/{cat_id}/only_photos")
-async def upload_cat_photos_to_drive(cat_id: int, files: List[UploadFile] = File(...), db=Depends(get_db)):
+async def upload_cat_photos_to_drive(cat_id: int, files: List[UploadFile] = File(None), db=Depends(get_db)):
     """
     Add photos to a cat by its id and upload them to Google Drive.
     """
-    cat = await get_cat(db, cat_id=cat_id)
-    if not cat:
-        raise HTTPException(status_code=404, detail="Cat not found")
-    for file in files:
-        photo = PhotoCreate(url=file.filename, cat_id=cat_id)
-        await create_cat_photos(db, photo, file, cat)
+    await create_cat_photos(db, files, cat_id)
     return {"detail": "Photos uploaded successfully"}
 
 

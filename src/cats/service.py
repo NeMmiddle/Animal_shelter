@@ -7,11 +7,11 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from cats.models import Cat, Photo
-from cats.schemas import CatCreate, CatUpdate, PhotoCreate
+from cats.schemas import CatCreate, CatUpdate, PhotoCreate, CatWithPhotos
 from cats.utils import upload_photos_to_google_drive, delete_photos_from_drive
 
 
-async def get_cats(db: AsyncSession, skip: int, limit: int):
+async def get_cats(db: AsyncSession, skip: int, limit: int) -> [Cat]:
     """
     Get all the added cats from the database.
     """
@@ -19,7 +19,7 @@ async def get_cats(db: AsyncSession, skip: int, limit: int):
     return result.scalars().all()
 
 
-async def get_cat(db: AsyncSession, cat_id: int):
+async def get_cat(db: AsyncSession, cat_id: int) -> Cat:
     """
     Get one cat for him id.
     """
@@ -27,7 +27,7 @@ async def get_cat(db: AsyncSession, cat_id: int):
     return result.scalars().first()
 
 
-async def get_cat_with_photos(db: AsyncSession, cat_id: int):
+async def get_cat_with_photos(db: AsyncSession, cat_id: int) -> CatWithPhotos:
     """
     Get the added cat and all his photos from the database.
     """
@@ -37,7 +37,9 @@ async def get_cat_with_photos(db: AsyncSession, cat_id: int):
     return result.scalars().first()
 
 
-async def create_cat_with_photos(db: AsyncSession, cat: CatCreate, files: Optional[List[UploadFile]]) -> Cat:
+async def create_cat_with_photos(
+        db: AsyncSession, cat: CatCreate, files: Optional[List[UploadFile]] = None
+) -> CatWithPhotos:
     """
     Save the cat and all his photos in the database.
     Also save photos on Google Drive using Google Drive API.
@@ -49,7 +51,7 @@ async def create_cat_with_photos(db: AsyncSession, cat: CatCreate, files: Option
         db.add(db_cat)
         await db.flush()
 
-        if files is not None:
+        if files:
             # Upload photos to Google Drive and create records in the database
             try:
                 # Upload photos to Google Drive
@@ -61,14 +63,14 @@ async def create_cat_with_photos(db: AsyncSession, cat: CatCreate, files: Option
                     db_photo = Photo(**photo.dict())
                     db.add(db_photo)
                     await db.flush()
+
+                # Save the folder_id to the database
+                db_cat.folder_id = folder_id
             except Exception as e:
                 # If there is an error during photo upload, delete the cat record from the database
                 await db.delete(db_cat)
                 await db.flush()
                 raise e
-
-        # Save the folder_id to the database
-        db_cat.folder_id = folder_id
 
         await db.commit()
         await db.refresh(db_cat)
@@ -80,17 +82,30 @@ async def create_cat_with_photos(db: AsyncSession, cat: CatCreate, files: Option
 
 
 async def create_cat_photos(
-        db: AsyncSession, photo: PhotoCreate, file: UploadFile, cat: Cat
+        db: AsyncSession, files: List[UploadFile], cat_id: int
 ):
     """
-    Add both locally and to the database the added photos of the cat
+    Add the added photos of the cat to the database and upload them to Google Drive
     """
-    db_photo = Photo(**photo.dict())
-    db.add(db_photo)
-    await db.commit()
-    await db.refresh(db_photo)
 
-    return db_photo
+    # Get the cat from the database
+    cat = await get_cat(db, cat_id=cat_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Cat not found")
+
+    # Upload photos to Google Drive and get folder_id
+    urls, folder_id = await upload_photos_to_google_drive(files, cat_id=cat_id, cat_name=cat.name)
+
+    # Create records of the photos in the database
+    for url in urls:
+        photo = PhotoCreate(url=url, folder_id=folder_id, cat_id=cat.id)
+        db_photo = Photo(**photo.dict())
+        db.add(db_photo)
+        await db.flush()
+
+    # Save folder_id in the database
+    cat.folder_id = folder_id
+    await db.commit()
 
 
 async def update_cat(db: AsyncSession, db_cat: Cat, cat_update: CatUpdate):
@@ -135,16 +150,3 @@ async def delete_cat(db: AsyncSession, cat_id: int) -> None:
         await db.rollback()
         raise e
 
-
-async def save_photo_to_directory(file: UploadFile, directory: str):
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-
-    file_path = os.path.join(directory, file.filename)
-    if os.path.exists(file_path):
-        shutil.rmtree(directory)  # удаляем всю папку и ее содержимое
-
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    file.file.close()
