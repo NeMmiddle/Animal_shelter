@@ -44,7 +44,7 @@ async def upload_photos_to_google_drive(files: List[UploadFile], cat_id: int, ca
         if not file.filename.lower().endswith(allowed_extensions):
             raise HTTPException(status_code=400,
                                 detail=f"File '{file.filename}' has an invalid file type."
-                                f"Only image files are allowed.")
+                                       f"Only image files are allowed.")
 
     # Authorize with Google Drive API
     creds = await get_user_credentials()
@@ -85,3 +85,31 @@ async def upload_photos_to_google_drive(files: List[UploadFile], cat_id: int, ca
         urls.append(url)
 
     return urls, folder_id
+
+
+async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
+    """
+    Delete photos of the cat from Google Drive using Google Drive API.
+    """
+    try:
+        # Authorize with Google Drive API
+        creds = await get_user_credentials()
+        drive_service = build('drive', 'v3', credentials=creds)
+
+        # Find the folder with the cat's photos
+        query = f"mimeType='application/vnd.google-apps.folder' and name='{cat_id} - {cat_name}'"
+        folder = drive_service.files().list(q=query, fields='files(id)').execute().get('files')
+        if not folder:
+            raise HTTPException(status_code=404, detail=f"Folder for cat with id={cat_id} not found")
+        folder_id = folder[0].get('id')
+
+        # Delete all files in the folder
+        query = f"'{folder_id}' in parents"
+        files = drive_service.files().list(q=query, fields='files(id)').execute().get('files', [])
+        for file in files:
+            drive_service.files().delete(fileId=file.get('id')).execute()
+
+        # Delete the folder
+        drive_service.files().delete(fileId=folder_id).execute()
+    except Exception as e:
+        raise e

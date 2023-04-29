@@ -8,8 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from cats.models import Cat, Photo
 from cats.schemas import CatCreate, CatUpdate, PhotoCreate
-from cats.utils import upload_photos_to_google_drive, get_user_credentials
-from googleapiclient.discovery import build
+from cats.utils import upload_photos_to_google_drive, delete_photos_from_drive
 
 
 async def get_cats(db: AsyncSession, skip: int, limit: int):
@@ -112,33 +111,12 @@ async def update_cat(db: AsyncSession, db_cat: Cat, cat_update: CatUpdate):
 async def delete_cat(db: AsyncSession, cat_id: int) -> None:
     """
     Delete the cat and all his photos from the database.
-    Also delete photos from Google Drive using Google Drive API.
     """
     try:
         # Get the cat from the database
         db_cat = await db.get(Cat, cat_id)
         if db_cat is None:
             raise HTTPException(status_code=404, detail=f"Cat with id={cat_id} not found")
-
-        # Authorize with Google Drive API
-        creds = await get_user_credentials()
-        drive_service = build('drive', 'v3', credentials=creds)
-
-        # Find the folder with the cat's photos
-        query = f"mimeType='application/vnd.google-apps.folder' and name='{cat_id} - {db_cat.name}'"
-        folder = drive_service.files().list(q=query, fields='files(id)').execute().get('files')
-        if not folder:
-            raise HTTPException(status_code=404, detail=f"Folder for cat with id={cat_id} not found")
-        folder_id = folder[0].get('id')
-
-        # Delete all files in the folder
-        query = f"'{folder_id}' in parents"
-        files = drive_service.files().list(q=query, fields='files(id)').execute().get('files', [])
-        for file in files:
-            drive_service.files().delete(fileId=file.get('id')).execute()
-
-        # Delete the folder
-        drive_service.files().delete(fileId=folder_id).execute()
 
         # Delete all photos of the cat from the database
         photos = await db.execute(select(Photo).where(Photo.cat_id == cat_id))
@@ -147,6 +125,10 @@ async def delete_cat(db: AsyncSession, cat_id: int) -> None:
 
         # Delete the cat record from the database
         await db.delete(db_cat)
+
+        # Delete the cat's photos from Google Drive
+        await delete_photos_from_drive(cat_id, db_cat.name)
+
         await db.commit()
     except Exception as e:
         # If there is an error during cat deletion, rollback the database transaction
