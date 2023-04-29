@@ -91,7 +91,7 @@ async def delete_cat_by_id(cat_id: int, db=Depends(get_db)):
     cat = await get_cat(db, cat_id=cat_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Cat not found")
-    await delete_cat(db, cat)
+    await delete_cat(db, cat.id)
     return {
         "message": f"Cat with id:{cat_id} and all related photos deleted successfully"
     }

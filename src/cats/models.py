@@ -17,6 +17,7 @@ class Cat(Base):
     sterilized = Column(Boolean, nullable=False)
     registered_at = Column(TIMESTAMP, default=datetime.utcnow)
     views = Column(Integer, default=0)
+    folder_id = Column(String, nullable=True)
 
     photos = relationship("Photo", back_populates="cat")
 

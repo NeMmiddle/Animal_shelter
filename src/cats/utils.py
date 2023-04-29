@@ -1,6 +1,6 @@
 import io
 import pickle
-from typing import List
+from typing import List, Tuple
 
 from fastapi import UploadFile, HTTPException
 from google.oauth2.credentials import Credentials
@@ -34,9 +34,9 @@ async def get_user_credentials() -> Credentials:
     return creds
 
 
-async def upload_photos_to_google_drive(files: List[UploadFile], cat_id: int, cat_name: str) -> List[str]:
+async def upload_photos_to_google_drive(files: List[UploadFile], cat_id: int, cat_name: str) -> Tuple[List[str], str]:
     """
-    Upload photos to Google Drive and return their URLs.
+    Upload photos to Google Drive and return their URLs and the ID of the cat's folder.
     """
     # Check file types
     allowed_extensions = ('.jpg', '.jpeg', '.png', '.gif')
@@ -84,4 +84,4 @@ async def upload_photos_to_google_drive(files: List[UploadFile], cat_id: int, ca
         url = f"https://drive.google.com/uc?id={file.get('id')}"
         urls.append(url)
 
-    return urls
+    return urls, folder_id
