@@ -13,11 +13,8 @@ from cats.service import (
     update_cat,
 )
 from database import get_db
-import logging
 
 router = APIRouter(prefix="/cats", tags=["Cats"])
-
-logger = logging.getLogger(__name__)
 
 
 @router.get("/all", response_model=List[CatWithPhotos])
@@ -29,7 +26,6 @@ async def get_all_cats(skip: int = 0, limit: int = 20, db=Depends(get_db)):
         cats = await get_cats(db, skip=skip, limit=limit)
         return cats
     except Exception as e:
-        logger.error(f"An error occurred while getting all cats: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
@@ -49,11 +45,7 @@ async def get_cat_on_id(cat_id: int, db=Depends(get_db)):
             )
         return cat
     except Exception as e:
-        logger.error(f"An error occurred while getting a cat with photos: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error",
-        )
+        raise e
 
 
 @router.post("/cat")
