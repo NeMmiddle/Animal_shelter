@@ -23,9 +23,17 @@ class CatUpdate(CatBase):
         orm_mode = True
 
 
+class Cat(CatBase):
+    registered_at: datetime
+    views: int
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
 class PhotoBase(BaseModel):
     url: str
-    cat_id: int
 
 
 class PhotoCreate(PhotoBase):
@@ -33,16 +41,7 @@ class PhotoCreate(PhotoBase):
 
 
 class Photo(PhotoBase):
-    id: int
-
-    class Config:
-        orm_mode = True
-
-
-class Cat(CatBase):
-    registered_at: datetime
-    views: int
-    id: int
+    pass
 
     class Config:
         orm_mode = True

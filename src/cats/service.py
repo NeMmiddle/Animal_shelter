@@ -1,7 +1,6 @@
-import os
-import shutil
+import logging
 from typing import List, Optional
-from fastapi import UploadFile, HTTPException
+from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -10,13 +9,7 @@ from cats.models import Cat, Photo
 from cats.schemas import CatCreate, CatUpdate, PhotoCreate, CatWithPhotos
 from cats.utils import upload_photos_to_google_drive, delete_photos_from_drive
 
-
-async def get_cats(db: AsyncSession, skip: int, limit: int) -> [Cat]:
-    """
-    Get all the added cats from the database.
-    """
-    result = await db.execute(select(Cat).offset(skip).limit(limit))
-    return result.scalars().all()
+logger = logging.getLogger(__name__)
 
 
 async def get_cat(db: AsyncSession, cat_id: int) -> Cat:
@@ -27,19 +20,45 @@ async def get_cat(db: AsyncSession, cat_id: int) -> Cat:
     return result.scalars().first()
 
 
+async def get_cats(db: AsyncSession, skip: int = 0, limit: int = 20) -> [CatWithPhotos]:
+    """
+    Get all the added cats from the database along with their photos.
+    """
+    try:
+        result = await db.execute(
+            select(Cat).options(selectinload(Cat.photos)).offset(skip).limit(limit)
+        )
+        return result.scalars().all()
+
+    except Exception as e:
+        logger.error(f"An error occurred while getting cats with photos: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
+
+
 async def get_cat_with_photos(db: AsyncSession, cat_id: int) -> CatWithPhotos:
     """
     Get the added cat and all his photos from the database.
     """
-    result = await db.execute(
-        select(Cat).options(selectinload(Cat.photos)).filter(Cat.id == cat_id)
-    )
-    return result.scalars().first()
+    try:
+        result = await db.execute(
+            select(Cat).options(selectinload(Cat.photos)).filter(Cat.id == cat_id)
+        )
+        return result.scalars().first()
+
+    except Exception as e:
+        logger.error(f"An error occurred while getting a cat with photos: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
 
 
 async def create_cat_with_photos(
-        db: AsyncSession, cat: CatCreate, files: Optional[List[UploadFile]] = None
-) -> CatWithPhotos:
+    db: AsyncSession, cat: CatCreate, files: Optional[List[UploadFile]] = None
+) -> None:
     """
     Save the cat and all his photos in the database.
     Also save photos on Google Drive using Google Drive API.
@@ -47,7 +66,13 @@ async def create_cat_with_photos(
 
     try:
         # Create a record of the cat in the database
-        db_cat = Cat(name=cat.name, age=cat.age, gender=cat.gender, about=cat.about, sterilized=cat.sterilized)
+        db_cat = Cat(
+            name=cat.name,
+            age=cat.age,
+            gender=cat.gender,
+            about=cat.about,
+            sterilized=cat.sterilized,
+        )
         db.add(db_cat)
         await db.flush()
 
@@ -55,17 +80,21 @@ async def create_cat_with_photos(
             # Upload photos to Google Drive and create records in the database
             try:
                 # Upload photos to Google Drive
-                urls, folder_id = await upload_photos_to_google_drive(files, db_cat.id, db_cat.name)
+                urls, google_folder_id = await upload_photos_to_google_drive(
+                    files, db_cat.id, db_cat.name
+                )
 
                 # Create a record of the photo in the database
                 for url in urls:
-                    photo = PhotoCreate(url=url, cat_id=db_cat.id, folder_id=folder_id)
+                    photo = PhotoCreate(
+                        url=url, cat_id=db_cat.id, google_folder_id=google_folder_id
+                    )
                     db_photo = Photo(**photo.dict())
                     db.add(db_photo)
                     await db.flush()
 
-                # Save the folder_id to the database
-                db_cat.folder_id = folder_id
+                # Save the google_folder_id to the database
+                db_cat.google_folder_id = google_folder_id
             except Exception as e:
                 # If there is an error during photo upload, delete the cat record from the database
                 await db.delete(db_cat)
@@ -74,16 +103,13 @@ async def create_cat_with_photos(
 
         await db.commit()
         await db.refresh(db_cat)
-        return db_cat
     except Exception as e:
         # If there is an error during cat creation, rollback the database transaction
         await db.rollback()
         raise e
 
 
-async def create_cat_photos(
-        db: AsyncSession, files: List[UploadFile], cat_id: int
-):
+async def create_cat_photos(db: AsyncSession, files: List[UploadFile], cat_id: int):
     """
     Add the added photos of the cat to the database and upload them to Google Drive
     """
@@ -93,18 +119,20 @@ async def create_cat_photos(
     if not cat:
         raise HTTPException(status_code=404, detail="Cat not found")
 
-    # Upload photos to Google Drive and get folder_id
-    urls, folder_id = await upload_photos_to_google_drive(files, cat_id=cat_id, cat_name=cat.name)
+    # Upload photos to Google Drive and get google_folder_id
+    urls, google_folder_id = await upload_photos_to_google_drive(
+        files, cat_id=cat_id, cat_name=cat.name
+    )
 
     # Create records of the photos in the database
     for url in urls:
-        photo = PhotoCreate(url=url, folder_id=folder_id, cat_id=cat.id)
+        photo = PhotoCreate(url=url, google_folder_id=google_folder_id, cat_id=cat.id)
         db_photo = Photo(**photo.dict())
         db.add(db_photo)
         await db.flush()
 
-    # Save folder_id in the database
-    cat.folder_id = folder_id
+    # Save google_folder_id in the database
+    cat.google_folder_id = google_folder_id
     await db.commit()
 
 
@@ -131,7 +159,9 @@ async def delete_cat(db: AsyncSession, cat_id: int) -> None:
         # Get the cat from the database
         db_cat = await db.get(Cat, cat_id)
         if db_cat is None:
-            raise HTTPException(status_code=404, detail=f"Cat with id={cat_id} not found")
+            raise HTTPException(
+                status_code=404, detail=f"Cat with id={cat_id} not found"
+            )
 
         # Delete all photos of the cat from the database
         photos = await db.execute(select(Photo).where(Photo.cat_id == cat_id))
@@ -149,4 +179,3 @@ async def delete_cat(db: AsyncSession, cat_id: int) -> None:
         # If there is an error during cat deletion, rollback the database transaction
         await db.rollback()
         raise e
-

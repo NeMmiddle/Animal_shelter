@@ -1,51 +1,77 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from cats.schemas import Cat, CatCreate, CatUpdate, CatWithPhotos
-from cats.service import (create_cat_photos, create_cat_with_photos,
-                          delete_cat, get_cat, get_cat_with_photos, get_cats,
-                          update_cat)
+from cats.service import (
+    create_cat_photos,
+    create_cat_with_photos,
+    delete_cat,
+    get_cat,
+    get_cat_with_photos,
+    get_cats,
+    update_cat,
+)
 from database import get_db
+import logging
 
 router = APIRouter(prefix="/cats", tags=["Cats"])
 
+logger = logging.getLogger(__name__)
 
-@router.get("/all", response_model=list[Cat])
+
+@router.get("/all", response_model=List[CatWithPhotos])
 async def get_all_cats(skip: int = 0, limit: int = 20, db=Depends(get_db)):
     """
     Get all cats.
     """
-    cats = await get_cats(db, skip=skip, limit=limit)
-    return cats
+    try:
+        cats = await get_cats(db, skip=skip, limit=limit)
+        return cats
+    except Exception as e:
+        logger.error(f"An error occurred while getting all cats: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
 
 
 @router.get("/{cat_id}", response_model=CatWithPhotos)
-async def get_only_cat(cat_id: int, db=Depends(get_db)):
+async def get_cat_on_id(cat_id: int, db=Depends(get_db)):
     """
     Get one cat by id.
     """
-    cat = await get_cat_with_photos(db, cat_id=cat_id)
-    if not cat:
-        raise HTTPException(status_code=404, detail="Cat not found")
-    return cat
+    try:
+        cat = await get_cat_with_photos(db, cat_id=cat_id)
+        if not cat:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Cat not found"
+            )
+        return cat
+    except Exception as e:
+        logger.error(f"An error occurred while getting a cat with photos: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
 
 
 @router.post("/cat")
 async def create_complete_cat_model(
-        name: str = Form(default="Сat destroyer"),
-        age: int = Form(default=3),
-        gender: str = Form(default="male"),
-        about: str = Form(default="about"),
-        sterilized: bool = Form(default=True),
-        files: List[UploadFile] = File(None),
-        db=Depends(get_db),
+    name: str = Form(default="Сat destroyer"),
+    age: int = Form(default=3),
+    gender: str = Form(default="male"),
+    about: str = Form(default="about"),
+    sterilized: bool = Form(default=True),
+    files: List[UploadFile] = File(None),
+    db=Depends(get_db),
 ):
     """
     Send a form to fill in the model of the cat and its photos.
-    (Photos do not need to be added immediately, this can be done later using the 'upload_cat_photos' router)
-    And also inside the create_cat_with_photos method we save photos locally
-    using the save_photo_to_directory internal method.
+    (Photos do not need to be added immediately,
+    this can be done later using the 'upload_cat_photos' router)
+    And also inside the create_cat_with_photos method we save photos to google drive
+    using the upload_photos_to_google_drive method.
     """
 
     cat = CatCreate(
@@ -56,7 +82,9 @@ async def create_complete_cat_model(
 
 
 @router.post("/{cat_id}/only_photos")
-async def upload_cat_photos_to_drive(cat_id: int, files: List[UploadFile] = File(None), db=Depends(get_db)):
+async def upload_cat_photos_to_drive(
+    cat_id: int, files: List[UploadFile] = File(None), db=Depends(get_db)
+):
     """
     Add photos to a cat by its id and upload them to Google Drive.
     """
