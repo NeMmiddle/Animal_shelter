@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from cats.schemas import Cat, CatCreate, CatUpdate, CatWithPhotos
 from cats.service import (
-    create_cat_photos,
+    add_photos_for_the_cat,
     create_cat_with_photos,
     delete_cat,
     get_cat,
@@ -50,13 +50,13 @@ async def get_cat_on_id(cat_id: int, db=Depends(get_db)):
 
 @router.post("/cat")
 async def create_complete_cat_model(
-    name: str = Form(default="Сat destroyer"),
-    age: int = Form(default=3),
-    gender: str = Form(default="male"),
-    about: str = Form(default="about"),
-    sterilized: bool = Form(default=True),
-    files: List[UploadFile] = File(None),
-    db=Depends(get_db),
+        name: str = Form(default="Сat destroyer"),
+        age: int = Form(default=3),
+        gender: str = Form(default="male"),
+        about: str = Form(default="about"),
+        sterilized: bool = Form(default=True),
+        files: List[UploadFile] = File(None),
+        db=Depends(get_db),
 ):
     """
     Send a form to fill in the model of the cat and its photos.
@@ -75,24 +75,21 @@ async def create_complete_cat_model(
 
 @router.post("/{cat_id}/only_photos")
 async def upload_cat_photos_to_drive(
-    cat_id: int, files: List[UploadFile] = File(None), db=Depends(get_db)
+        cat_id: int, files: List[UploadFile] = File(None), db=Depends(get_db)
 ):
     """
     Add photos to a cat by its id and upload them to Google Drive.
     """
-    await create_cat_photos(db, files, cat_id)
+    await add_photos_for_the_cat(db, files, cat_id)
     return {"detail": "Photos uploaded successfully"}
 
 
-@router.put("/{cat_id}", response_model=Cat)
+@router.patch("/{cat_id}", response_model=CatWithPhotos)
 async def update_cat_by_id(cat_id: int, cat_update: CatUpdate, db=Depends(get_db)):
     """
-    We can change the fields of an existing cat.
+    We can update the fields of an existing cat and the name of its photos folder in Google Drive.
     """
-    db_cat = await get_cat(db, cat_id=cat_id)
-    if not db_cat:
-        raise HTTPException(status_code=404, detail="Cat not found")
-    db_cat = await update_cat(db, db_cat, cat_update)
+    db_cat = await update_cat(db, cat_id, cat_update)
     return db_cat
 
 

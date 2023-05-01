@@ -34,10 +34,10 @@ class Cat(CatBase):
 
 class PhotoBase(BaseModel):
     url: str
-    cat_id: int
 
 
 class PhotoCreate(PhotoBase):
+    cat_id: int
     pass
 
 

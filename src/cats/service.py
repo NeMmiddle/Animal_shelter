@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from cats.models import Cat, Photo
 from cats.schemas import CatCreate, CatUpdate, PhotoCreate, CatWithPhotos
-from cats.utils import upload_photos_to_google_drive, delete_photos_from_drive
+from cats.utils import upload_photos_to_google_drive, delete_photos_from_drive, update_folder_name
 
 
 async def get_cat(db: AsyncSession, cat_id: int) -> Cat:
@@ -18,7 +18,7 @@ async def get_cat(db: AsyncSession, cat_id: int) -> Cat:
             select(Cat).options(selectinload(Cat.photos)).filter(Cat.id == cat_id)
         )
         return result.scalars().first()
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
@@ -80,7 +80,7 @@ async def create_cat(db: AsyncSession, cat: CatCreate) -> Cat:
 
 
 async def upload_photos(
-    db: AsyncSession, files: List[UploadFile], cat_id: int, cat_name: str
+        db: AsyncSession, files: List[UploadFile], cat_id: int, cat_name: str
 ) -> Tuple[List[str], str]:
     """
     Upload photos to Google Drive and return their URLs and folder ID.
@@ -105,7 +105,7 @@ async def upload_photos(
 
 
 async def create_cat_with_photos(
-    db: AsyncSession, cat: CatCreate, files: Optional[List[UploadFile]] = None
+        db: AsyncSession, cat: CatCreate, files: Optional[List[UploadFile]] = None
 ) -> None:
     """
     Save the cat and all his photos in the database.
@@ -130,7 +130,7 @@ async def create_cat_with_photos(
         raise e
 
 
-async def create_cat_photos(db: AsyncSession, files: List[UploadFile], cat_id: int):
+async def add_photos_for_the_cat(db: AsyncSession, files: List[UploadFile], cat_id: int):
     """
     Add the added photos of the cat to the database and upload them to Google Drive
     """
@@ -155,21 +155,6 @@ async def create_cat_photos(db: AsyncSession, files: List[UploadFile], cat_id: i
     # Save google_folder_id in the database
     cat.google_folder_id = google_folder_id
     await db.commit()
-
-
-async def update_cat(db: AsyncSession, db_cat: Cat, cat_update: CatUpdate):
-    """
-    Update information about the cat by its id and save it in the database
-    """
-    update_data = cat_update.dict(exclude_unset=True)
-
-    for key, value in update_data.items():
-        setattr(db_cat, key, value)
-
-    await db.commit()
-    await db.refresh(db_cat)
-
-    return db_cat
 
 
 async def delete_cat(db: AsyncSession, cat_id: int) -> None:
@@ -198,5 +183,48 @@ async def delete_cat(db: AsyncSession, cat_id: int) -> None:
         await db.commit()
     except Exception as e:
         # If there is an error during cat deletion, rollback the database transaction
+        await db.rollback()
+        raise e
+
+
+async def update_cat_in_db(db: AsyncSession, db_cat: CatWithPhotos, cat_update: CatUpdate):
+    """
+    Update information about the cat by its id and save it in the database and in Google Drive
+    """
+    update_data = cat_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_cat, key, value)
+
+    await db.commit()
+    await db.refresh(db_cat)
+
+    return db_cat
+
+
+async def update_cat(db: AsyncSession, cat_id: int, cat_update: CatUpdate):
+    try:
+        db_cat = await get_cat(db, cat_id=cat_id)
+        if not db_cat:
+            raise HTTPException(status_code=404, detail="Cat not found")
+
+        # Update the cat's information in the database
+        db_cat = await update_cat_in_db(db, db_cat, cat_update)
+
+        # Update the name of the photos folder in Google Drive
+        folder_id = db_cat.google_folder_id  # ID of the folder in Google Drive
+        folder_name = db_cat.name  # New name of the folder
+
+        updated_folder = await update_folder_name(folder_id=folder_id, cat_id=cat_id, new_name=folder_name)
+        if not updated_folder:
+            raise HTTPException(status_code=500,
+                                detail="Failed to update the name of the photos folder in Google Drive")
+
+        # Commit the transaction to the database
+        await db.commit()
+
+        return db_cat
+
+    except Exception as e:
+        # Rollback the transaction if an error occurs
         await db.rollback()
         raise e

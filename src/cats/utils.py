@@ -37,7 +37,7 @@ async def get_user_credentials() -> Credentials:
 
 
 async def upload_photos_to_google_drive(
-    files: List[UploadFile], cat_id: int, cat_name: str
+        files: List[UploadFile], cat_id: int, cat_name: str
 ) -> Tuple[List[str], str]:
     """
     Upload photos to Google Drive and return their URLs and the ID of the cat's folder.
@@ -49,7 +49,7 @@ async def upload_photos_to_google_drive(
             raise HTTPException(
                 status_code=400,
                 detail=f"File '{file.filename}' has an invalid file type."
-                f"Only image files are allowed.",
+                       f"Only image files are allowed.",
             )
 
     # Authorize with Google Drive API
@@ -130,7 +130,7 @@ async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
         )
         if not folder:
             raise HTTPException(
-                status_code=404, detail=f"Folder for cat with id={cat_id} not found"
+                status_code=404, detail=f"Folder for cat with id:{cat_id} not found"
             )
         google_folder_id = folder[0].get("id")
 
@@ -152,7 +152,7 @@ async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
             raise HTTPException(status_code=401, detail="Invalid credentials")
         elif e.resp.status == 404:
             raise HTTPException(
-                status_code=404, detail=f"Folder for cat with id={cat_id} not found"
+                status_code=404, detail=f"Folder for cat with id:{cat_id} not found"
             )
         else:
             raise HTTPException(
@@ -161,4 +161,32 @@ async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
     except Exception:
         raise HTTPException(
             status_code=500, detail="Failed to delete photos from Google Drive"
+        )
+
+
+async def update_folder_name(folder_id: str, cat_id: int, new_name: str):
+    try:
+        creds = await get_user_credentials()
+        drive_service = build("drive", "v3", credentials=creds)
+
+        # Get the metadata of the folder by its ID
+        folder_metadata = {'name': f"{cat_id} - {new_name}"}
+        folder = drive_service.files().update(fileId=folder_id, body=folder_metadata).execute()
+
+        return folder
+
+    except HttpError as e:
+        if e.resp.status == 401:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        elif e.resp.status == 404:
+            raise HTTPException(
+                status_code=404, detail=f"Folder for cat with id:{cat_id} not found"
+            )
+        else:
+            raise HTTPException(
+                status_code=500, detail="Failed to update photos from Google Drive"
+            )
+    except Exception:
+        raise HTTPException(
+            status_code=500, detail="Failed to update photos from Google Drive"
         )
