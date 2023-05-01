@@ -28,5 +28,6 @@ class Photo(Base):
     id = Column(Integer, primary_key=True, index=True)
     url = Column(String)
     cat_id = Column(Integer, ForeignKey("cats.id"))
+    google_file_id = Column(String)
 
     cat = relationship("Cat", back_populates="photos")

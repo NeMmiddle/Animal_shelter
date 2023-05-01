@@ -2,12 +2,12 @@ import io
 import pickle
 from typing import List, Tuple
 
-from fastapi import UploadFile, HTTPException
+from fastapi import HTTPException, UploadFile
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
 from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseUpload
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
@@ -37,76 +37,67 @@ async def get_user_credentials() -> Credentials:
 
 
 async def upload_photos_to_google_drive(
-        files: List[UploadFile], cat_id: int, cat_name: str
+    files: List[UploadFile], cat_id: int, cat_name: str
 ) -> Tuple[List[str], str]:
     """
     Upload photos to Google Drive and return their URLs and the ID of the cat's folder.
     """
-    # Check file types
-    allowed_extensions = (".jpg", ".jpeg", ".png", ".gif")
-    for file in files:
-        if not file.filename.lower().endswith(allowed_extensions):
-            raise HTTPException(
-                status_code=400,
-                detail=f"File '{file.filename}' has an invalid file type."
-                       f"Only image files are allowed.",
+    try:
+        # Authorize with Google Drive API
+        creds = await get_user_credentials()
+        drive_service = build("drive", "v3", credentials=creds)
+
+        # Check if the "Photos of cats" folder exists, create it if necessary
+        query = "mimeType='application/vnd.google-apps.folder' and name='Photos of cats'"
+        folder = (
+            drive_service.files().list(q=query, fields="files(id)").execute().get("files")
+        )
+        if not folder:
+            folder_metadata = {
+                "name": "Photos of cats",
+                "mimeType": "application/vnd.google-apps.folder",
+            }
+            folder = (
+                drive_service.files().create(body=folder_metadata, fields="id").execute()
             )
+            google_folder_id = folder.get("id")
+        else:
+            google_folder_id = folder[0].get("id")
 
-    # Authorize with Google Drive API
-    creds = await get_user_credentials()
-    drive_service = build("drive", "v3", credentials=creds)
-
-    # Check if the "Photos of cats" folder exists, create it if necessary
-    query = "mimeType='application/vnd.google-apps.folder' and name='Photos of cats'"
-    folder = (
-        drive_service.files().list(q=query, fields="files(id)").execute().get("files")
-    )
-    if not folder:
-        folder_metadata = {
-            "name": "Photos of cats",
-            "mimeType": "application/vnd.google-apps.folder",
-        }
+        # Check if the cat's folder exists, create it if necessary
+        query = f"mimeType='application/vnd.google-apps.folder' and name='{cat_id} - {cat_name}' and parents='{google_folder_id}'"
         folder = (
-            drive_service.files().create(body=folder_metadata, fields="id").execute()
+            drive_service.files().list(q=query, fields="files(id)").execute().get("files")
         )
-        google_folder_id = folder.get("id")
-    else:
-        google_folder_id = folder[0].get("id")
+        if not folder:
+            folder_metadata = {
+                "name": f"{cat_id} - {cat_name}",
+                "parents": [google_folder_id],
+                "mimeType": "application/vnd.google-apps.folder",
+            }
+            folder = (
+                drive_service.files().create(body=folder_metadata, fields="id").execute()
+            )
+            google_folder_id = folder.get("id")
+        else:
+            google_folder_id = folder[0].get("id")
 
-    # Check if the cat's folder exists, create it if necessary
-    query = f"mimeType='application/vnd.google-apps.folder' and name='{cat_id} - {cat_name}' and parents='{google_folder_id}'"
-    folder = (
-        drive_service.files().list(q=query, fields="files(id)").execute().get("files")
-    )
-    if not folder:
-        folder_metadata = {
-            "name": f"{cat_id} - {cat_name}",
-            "parents": [google_folder_id],
-            "mimeType": "application/vnd.google-apps.folder",
-        }
-        folder = (
-            drive_service.files().create(body=folder_metadata, fields="id").execute()
-        )
-        google_folder_id = folder.get("id")
-    else:
-        google_folder_id = folder[0].get("id")
+        # Upload photos to the cat's folder
+        urls = []
+        for file in files:
+            media = MediaIoBaseUpload(
+                io.BytesIO(await file.read()), mimetype=file.content_type, resumable=True
+            )
+            file_metadata = {"name": file.filename, "parents": [google_folder_id]}
+            file = (
+                drive_service.files()
+                .create(body=file_metadata, media_body=media, fields="id")
+                .execute()
+            )
+            url = f"https://drive.google.com/uc?id={file.get('id')}"
+            urls.append(url)
 
-    # Upload photos to the cat's folder
-    urls = []
-    for file in files:
-        media = MediaIoBaseUpload(
-            io.BytesIO(await file.read()), mimetype=file.content_type, resumable=True
-        )
-        file_metadata = {"name": file.filename, "parents": [google_folder_id]}
-        file = (
-            drive_service.files()
-            .create(body=file_metadata, media_body=media, fields="id")
-            .execute()
-        )
-        url = f"https://drive.google.com/uc?id={file.get('id')}"
-        urls.append(url)
-
-    return urls, google_folder_id
+        return urls, google_folder_id
 
 
 async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
@@ -170,8 +161,12 @@ async def update_folder_name(folder_id: str, cat_id: int, new_name: str):
         drive_service = build("drive", "v3", credentials=creds)
 
         # Get the metadata of the folder by its ID
-        folder_metadata = {'name': f"{cat_id} - {new_name}"}
-        folder = drive_service.files().update(fileId=folder_id, body=folder_metadata).execute()
+        folder_metadata = {"name": f"{cat_id} - {new_name}"}
+        folder = (
+            drive_service.files()
+            .update(fileId=folder_id, body=folder_metadata)
+            .execute()
+        )
 
         return folder
 
@@ -190,3 +185,15 @@ async def update_folder_name(folder_id: str, cat_id: int, new_name: str):
         raise HTTPException(
             status_code=500, detail="Failed to update photos from Google Drive"
         )
+
+
+async def delete_google_drive_file(file_id: str):
+    """
+    Delete a file from Google Drive by ID.
+    """
+    try:
+        creds = await get_user_credentials()
+        service = build("drive", "v3", credentials=creds)
+        service.files().delete(fileId=file_id).execute()
+    except HttpError as error:
+        print(f"An error occurred: {error}")

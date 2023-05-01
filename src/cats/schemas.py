@@ -38,6 +38,7 @@ class PhotoBase(BaseModel):
 
 class PhotoCreate(PhotoBase):
     cat_id: int
+    google_file_id: str
     pass
 
 
