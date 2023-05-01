@@ -7,12 +7,9 @@ from sqlalchemy.orm import selectinload
 
 from cats.models import Cat, Photo
 from cats.schemas import CatCreate, CatUpdate, CatWithPhotos, PhotoCreate
-from cats.utils import (
-    delete_google_drive_file,
-    delete_photos_from_drive,
-    update_folder_name,
-    upload_photos_to_google_drive,
-)
+from cats.utils import (delete_google_drive_file, delete_photos_from_drive,
+                        update_google_folder_name,
+                        upload_photos_to_google_drive)
 
 
 async def get_cat(db: AsyncSession, cat_id: int) -> [CatWithPhotos]:
@@ -22,12 +19,12 @@ async def get_cat(db: AsyncSession, cat_id: int) -> [CatWithPhotos]:
     query = await db.execute(
         select(Cat).options(selectinload(Cat.photos)).filter(Cat.id == cat_id)
     )
-    result = query.scalars().first()
-    if not result:
+    cat = query.scalars().first()
+    if not cat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cat not found"
         )
-    return result
+    return cat
 
 
 async def get_photo(db: AsyncSession, photo_id: int) -> [Photo]:
@@ -50,8 +47,8 @@ async def get_cats(db: AsyncSession, skip: int = 0, limit: int = 20) -> [CatWith
     query = await db.execute(
         select(Cat).options(selectinload(Cat.photos)).offset(skip).limit(limit)
     )
-    result = query.scalars().all()
-    return result
+    cats = query.scalars().all()
+    return cats
 
 
 async def create_cat(db: AsyncSession, cat: CatCreate) -> Cat:
@@ -69,6 +66,7 @@ async def create_cat(db: AsyncSession, cat: CatCreate) -> Cat:
         db.add(db_cat)
         await db.flush()
         return db_cat
+
     except Exception as e:
         await db.rollback()
         raise e
@@ -99,6 +97,7 @@ async def upload_photos(
                     detail=f"File '{file.filename}' has an invalid file type."
                     f"Only image files are allowed.",
                 )
+
         # Upload photos to Google Drive
         urls, folder_id = await upload_photos_to_google_drive(
             files=files, cat_id=cat_id, cat_name=cat_name
@@ -118,6 +117,7 @@ async def upload_photos(
             await db.flush()
 
         return urls, folder_id
+
     except Exception as e:
         await db.rollback()
         raise e
@@ -141,39 +141,49 @@ async def create_cat_with_photos(
 
         await db.commit()
         await db.refresh(db_cat)
+
     except Exception as e:
-        # If there is an error during cat creation or photo upload, rollback the database transaction
         await db.rollback()
         raise e
 
 
 async def add_photos_for_the_cat(
     db: AsyncSession, files: List[UploadFile], cat_id: int
-):
+) -> None:
     """
-    Add the added photos of the cat to the database and upload them to Google Drive
+    Add the added photos of the cat to the database and upload them to Google Drive.
     """
+    try:
+        # Get the cat from the database
+        cat = await get_cat(db, cat_id=cat_id)
+        if not cat:
+            raise HTTPException(status_code=404, detail="Cat not found")
 
-    # Get the cat from the database
-    cat = await get_cat(db, cat_id=cat_id)
-    if not cat:
-        raise HTTPException(status_code=404, detail="Cat not found")
+        # Upload photos to Google Drive and get google_folder_id
+        urls, google_folder_id = await upload_photos_to_google_drive(
+            files, cat_id=cat_id, cat_name=cat.name
+        )
 
-    # Upload photos to Google Drive and get google_folder_id
-    urls, google_folder_id = await upload_photos_to_google_drive(
-        files, cat_id=cat_id, cat_name=cat.name
-    )
+        # Create records of the photos in the database
+        photos = []
+        for url in urls:
+            photo = PhotoCreate(
+                url=url, google_file_id=url.split("=")[1], cat_id=cat.id
+            )
+            db_photo = Photo(**photo.dict())
+            photos.append(db_photo)
 
-    # Create records of the photos in the database
-    for url in urls:
-        photo = PhotoCreate(url=url, google_file_id=url.split("=")[1], cat_id=cat.id)
-        db_photo = Photo(**photo.dict())
-        db.add(db_photo)
-        await db.flush()
+        # Add all the photos to the database at once
+        db.add_all(photos)
+        await db.commit()
 
-    # Save google_folder_id in the database
-    cat.google_folder_id = google_folder_id
-    await db.commit()
+        # Save google_folder_id in the database
+        cat.google_folder_id = google_folder_id
+        await db.commit()
+
+    except Exception as e:
+        await db.rollback()
+        raise e
 
 
 async def delete_cat(db: AsyncSession, cat_id: int) -> None:
@@ -200,17 +210,18 @@ async def delete_cat(db: AsyncSession, cat_id: int) -> None:
         await delete_photos_from_drive(cat_id, db_cat.name)
 
         await db.commit()
+
     except Exception as e:
-        # If there is an error during cat deletion, rollback the database transaction
         await db.rollback()
         raise e
 
 
 async def update_cat_in_db(
     db: AsyncSession, db_cat: CatWithPhotos, cat_update: CatUpdate
-):
+) -> CatWithPhotos:
     """
-    Update information about the cat by its id and save it in the database and in Google Drive
+    Update information about the cat by its id
+    and save it in the database and in Google Drive
     """
     update_data = cat_update.dict(exclude_unset=True)
     for key, value in update_data.items():
@@ -222,7 +233,13 @@ async def update_cat_in_db(
     return db_cat
 
 
-async def update_cat(db: AsyncSession, cat_id: int, cat_update: CatUpdate):
+async def update_cat(
+    db: AsyncSession, cat_id: int, cat_update: CatUpdate
+) -> CatWithPhotos:
+    """
+    Update information about the cat, if the name changes,
+    the name will be updated on Google Drive.
+    """
     try:
         db_cat = await get_cat(db, cat_id=cat_id)
         if not db_cat:
@@ -232,10 +249,10 @@ async def update_cat(db: AsyncSession, cat_id: int, cat_update: CatUpdate):
         db_cat = await update_cat_in_db(db, db_cat, cat_update)
 
         # Update the name of the photos folder in Google Drive
-        folder_id = db_cat.google_folder_id  # ID of the folder in Google Drive
-        folder_name = db_cat.name  # New name of the folder
+        folder_id = db_cat.google_folder_id
+        folder_name = db_cat.name
 
-        updated_folder = await update_folder_name(
+        updated_folder = await update_google_folder_name(
             folder_id=folder_id, cat_id=cat_id, new_name=folder_name
         )
         if not updated_folder:
@@ -244,59 +261,43 @@ async def update_cat(db: AsyncSession, cat_id: int, cat_update: CatUpdate):
                 detail="Failed to update the name of the photos folder in Google Drive",
             )
 
-        # Commit the transaction to the database
         await db.commit()
 
         return db_cat
 
     except Exception as e:
-        # Rollback the transaction if an error occurs
         await db.rollback()
         raise e
 
 
-async def get_cat_and_photo(
-    db: AsyncSession, cat_id: int, photo_id: int
-) -> Tuple[Optional[Cat], Optional[Photo]]:
-    """
-    Get a cat and a photo from the database by their IDs.
-    """
-    cat = await get_cat(db, cat_id=cat_id)
-    if not cat:
-        return None, None
-
-    photo = await get_photo(db, photo_id=photo_id)
-    if not photo:
-        return cat, None
-
-    return cat, photo
-
-
-async def delete_photo_from_db(db: AsyncSession, photo: Photo):
-    """
-    Delete a photo from the database.
-    """
-    try:
-        await db.delete(photo)
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(
-            status_code=500, detail=f"An error occurred while deleting the photo: {e}"
-        )
-
-
-async def delete_photo(db: AsyncSession, photo_id: int) -> Optional[Photo]:
+async def delete_photo(db: AsyncSession, photo_id: int, cat_id: int) -> None:
     """
     Delete a photo from the database by ID.
     """
-    photo = await get_photo(db, photo_id=photo_id)
-    if not photo:
-        return None
 
-    if photo.google_file_id:
-        await delete_google_drive_file(file_id=photo.google_file_id)
+    try:
+        # Get the cat and the photo from the database
+        cat = await get_cat(db, cat_id)
+        photo = await get_photo(db, photo_id)
 
-    await delete_photo_from_db(db=db, photo=photo)
+        # Check if the cat and the photo exist and if the photo belongs to the cat
+        if not cat:
+            raise HTTPException(status_code=404, detail="Cat not found")
+        if not photo:
+            raise HTTPException(status_code=404, detail="Photo not found")
+        if photo.cat_id != cat.id:
+            raise HTTPException(
+                status_code=400, detail="Photo does not belong to the cat"
+            )
 
-    return photo
+        # Delete the photo from Google Drive if it exists
+        if photo.google_file_id:
+            await delete_google_drive_file(file_id=photo.google_file_id)
+
+        # Delete the photo from the database
+        await db.delete(photo)
+        await db.commit()
+
+    except Exception as e:
+        await db.rollback()
+        raise e

@@ -48,35 +48,50 @@ async def upload_photos_to_google_drive(
         drive_service = build("drive", "v3", credentials=creds)
 
         # Check if the "Photos of cats" folder exists, create it if necessary
-        query = "mimeType='application/vnd.google-apps.folder' and name='Photos of cats'"
+        query = (
+            "mimeType='application/vnd.google-apps.folder' and name='Photos of cats'"
+        )
         folder = (
-            drive_service.files().list(q=query, fields="files(id)").execute().get("files")
+            drive_service.files()
+            .list(q=query, fields="files(id)")
+            .execute()
+            .get("files")
         )
         if not folder:
+            # Create the "Photos of cats" folder if it doesn't exist
             folder_metadata = {
                 "name": "Photos of cats",
                 "mimeType": "application/vnd.google-apps.folder",
             }
             folder = (
-                drive_service.files().create(body=folder_metadata, fields="id").execute()
+                drive_service.files()
+                .create(body=folder_metadata, fields="id")
+                .execute()
             )
             google_folder_id = folder.get("id")
         else:
             google_folder_id = folder[0].get("id")
 
         # Check if the cat's folder exists, create it if necessary
-        query = f"mimeType='application/vnd.google-apps.folder' and name='{cat_id} - {cat_name}' and parents='{google_folder_id}'"
+        query = f"mimeType='application/vnd.google-apps.folder'" \
+                f" and name='{cat_id} - {cat_name}' and parents='{google_folder_id}'"
         folder = (
-            drive_service.files().list(q=query, fields="files(id)").execute().get("files")
+            drive_service.files()
+            .list(q=query, fields="files(id)")
+            .execute()
+            .get("files")
         )
         if not folder:
+            # Create the cat's folder if it doesn't exist
             folder_metadata = {
                 "name": f"{cat_id} - {cat_name}",
                 "parents": [google_folder_id],
                 "mimeType": "application/vnd.google-apps.folder",
             }
             folder = (
-                drive_service.files().create(body=folder_metadata, fields="id").execute()
+                drive_service.files()
+                .create(body=folder_metadata, fields="id")
+                .execute()
             )
             google_folder_id = folder.get("id")
         else:
@@ -86,7 +101,9 @@ async def upload_photos_to_google_drive(
         urls = []
         for file in files:
             media = MediaIoBaseUpload(
-                io.BytesIO(await file.read()), mimetype=file.content_type, resumable=True
+                io.BytesIO(await file.read()),
+                mimetype=file.content_type,
+                resumable=True,
             )
             file_metadata = {"name": file.filename, "parents": [google_folder_id]}
             file = (
@@ -98,6 +115,19 @@ async def upload_photos_to_google_drive(
             urls.append(url)
 
         return urls, google_folder_id
+
+    except HttpError as e:
+        # Handle errors from Google Drive API requests
+        if e.resp.status == 401:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        elif e.resp.status == 404:
+            raise HTTPException(
+                status_code=404, detail="Failed to find a folder in Google Drive"
+            )
+    except Exception:
+        raise HTTPException(
+            status_code=500, detail="Failed to upload photos to Google Drive"
+        )
 
 
 async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
@@ -112,7 +142,8 @@ async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
         drive_service = build("drive", "v3", credentials=creds)
 
         # Find the folder with the cat's photos
-        query = f"mimeType='application/vnd.google-apps.folder' and name='{cat_id} - {cat_name}'"
+        query = f"mimeType='application/vnd.google-apps.folder'" \
+                f" and name='{cat_id} - {cat_name}'"
         folder = (
             drive_service.files()
             .list(q=query, fields="files(id)")
@@ -138,6 +169,7 @@ async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
 
         # Delete the folder
         drive_service.files().delete(fileId=google_folder_id).execute()
+
     except HttpError as e:
         if e.resp.status == 401:
             raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -145,17 +177,13 @@ async def delete_photos_from_drive(cat_id: int, cat_name: str) -> None:
             raise HTTPException(
                 status_code=404, detail=f"Folder for cat with id:{cat_id} not found"
             )
-        else:
-            raise HTTPException(
-                status_code=500, detail="Failed to delete photos from Google Drive"
-            )
     except Exception:
         raise HTTPException(
             status_code=500, detail="Failed to delete photos from Google Drive"
         )
 
 
-async def update_folder_name(folder_id: str, cat_id: int, new_name: str):
+async def update_google_folder_name(folder_id: str, cat_id: int, new_name: str):
     try:
         creds = await get_user_credentials()
         drive_service = build("drive", "v3", credentials=creds)
@@ -167,7 +195,6 @@ async def update_folder_name(folder_id: str, cat_id: int, new_name: str):
             .update(fileId=folder_id, body=folder_metadata)
             .execute()
         )
-
         return folder
 
     except HttpError as e:
@@ -177,13 +204,9 @@ async def update_folder_name(folder_id: str, cat_id: int, new_name: str):
             raise HTTPException(
                 status_code=404, detail=f"Folder for cat with id:{cat_id} not found"
             )
-        else:
-            raise HTTPException(
-                status_code=500, detail="Failed to update photos from Google Drive"
-            )
     except Exception:
         raise HTTPException(
-            status_code=500, detail="Failed to update photos from Google Drive"
+            status_code=500, detail="Failed to update folder name in Google Drive"
         )
 
 
@@ -195,5 +218,13 @@ async def delete_google_drive_file(file_id: str):
         creds = await get_user_credentials()
         service = build("drive", "v3", credentials=creds)
         service.files().delete(fileId=file_id).execute()
-    except HttpError as error:
-        print(f"An error occurred: {error}")
+
+    except HttpError as e:
+        if e.resp.status == 401:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        elif e.resp.status == 404:
+            raise HTTPException(status_code=404, detail="File not found")
+    except Exception:
+        raise HTTPException(
+            status_code=500, detail="Failed to update photos from Google Drive"
+        )

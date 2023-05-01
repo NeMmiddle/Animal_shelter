@@ -24,9 +24,9 @@ class CatUpdate(CatBase):
 
 
 class Cat(CatBase):
-    id: int
     views: int
     registered_at: datetime
+    id: int
 
     class Config:
         orm_mode = True
