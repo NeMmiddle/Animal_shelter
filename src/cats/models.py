@@ -19,15 +19,15 @@ class Cat(Base):
     views = Column(Integer, default=0)
     google_folder_id = Column(String, nullable=True)
 
-    photos = relationship("Photo", back_populates="cat")
+    photos = relationship("CatPhoto", back_populates="cat")
 
 
-class Photo(Base):
-    __tablename__ = "photos"
+class CatPhoto(Base):
+    __tablename__ = "cat_photos"
 
     id = Column(Integer, primary_key=True, index=True)
     url = Column(String)
-    cat_id = Column(Integer, ForeignKey("cats.id"))
     google_file_id = Column(String)
+    cat_id = Column(Integer, ForeignKey("cats.id"))
 
     cat = relationship("Cat", back_populates="photos")

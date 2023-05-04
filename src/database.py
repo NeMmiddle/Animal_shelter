@@ -13,22 +13,21 @@ Base = declarative_base()
 
 engine = create_async_engine(DATABASE_URL, echo=True, future=True)
 
-async_session = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-    autocommit=False,
-)
+async_session = sessionmaker(engine,
+                             class_=AsyncSession,
+                             expire_on_commit=False,
+                             autoflush=False,
+                             autocommit=False
+                             )
 
 SessionLocal = scoped_session(async_session)
-
-
-async def create_database():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
 
 async def get_db():
     async with SessionLocal() as session:
         yield session
+
+
+async def create_database():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)

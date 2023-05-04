@@ -195,6 +195,7 @@ async def update_google_folder_name(folder_id: str, cat_id: int, new_name: str):
             .update(fileId=folder_id, body=folder_metadata)
             .execute()
         )
+
         return folder
 
     except HttpError as e:

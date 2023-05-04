@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
-from cats.models import Cat, Photo
-from cats.schemas import CatCreate, CatUpdate, CatWithPhotos, PhotoCreate
+from cats.models import Cat, CatPhoto
+from cats.schemas import CatCreate, CatUpdate, CatWithPhotos, PhotoCreate, Photo
 from cats.utils import (delete_google_drive_file, delete_photos_from_drive,
                         update_google_folder_name,
                         upload_photos_to_google_drive)
@@ -31,7 +31,7 @@ async def get_photo(db: AsyncSession, photo_id: int) -> [Photo]:
     """
     Get a photo from the database by ID.
     """
-    result = await db.execute(select(Photo).where(Photo.id == photo_id))
+    result = await db.execute(select(CatPhoto).where(CatPhoto.id == photo_id))
     photo = result.scalars().first()
     if not photo:
         raise HTTPException(
@@ -65,6 +65,7 @@ async def create_cat(db: AsyncSession, cat: CatCreate) -> Cat:
         )
         db.add(db_cat)
         await db.flush()
+
         return db_cat
 
     except Exception as e:
@@ -112,7 +113,7 @@ async def upload_photos(
             photo = PhotoCreate(
                 url=url, cat_id=cat_id, google_file_id=url.split("=")[1]
             )
-            db_photo = Photo(**photo.dict())
+            db_photo = CatPhoto(**photo.dict())
             db.add(db_photo)
             await db.flush()
 
@@ -170,7 +171,7 @@ async def add_photos_for_the_cat(
             photo = PhotoCreate(
                 url=url, google_file_id=url.split("=")[1], cat_id=cat.id
             )
-            db_photo = Photo(**photo.dict())
+            db_photo = CatPhoto(**photo.dict())
             photos.append(db_photo)
 
         # Add all the photos to the database at once
@@ -199,7 +200,7 @@ async def delete_cat(db: AsyncSession, cat_id: int) -> None:
             )
 
         # Delete all photos of the cat from the database
-        photos = await db.execute(select(Photo).where(Photo.cat_id == cat_id))
+        photos = await db.execute(select(CatPhoto).where(CatPhoto.cat_id == cat_id))
         for photo in photos.scalars():
             await db.delete(photo)
 
