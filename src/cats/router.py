@@ -52,7 +52,7 @@ async def create_complete_cat_model(
     return {"message": "Upload was successful!"}
 
 
-@router.post("/{cat_id}/only_photos", response_model=CatWithPhotos)
+@router.post("/{cat_id}/only_photos")
 async def upload_cat_photos_to_drive(
     cat_id: int, files: List[UploadFile] = File(None), db=Depends(get_db)
 ):

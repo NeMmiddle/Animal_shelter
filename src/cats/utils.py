@@ -18,19 +18,19 @@ async def get_user_credentials() -> Credentials:
     """
     try:
         # Load the saved credentials from file
-        with open("token.pickle", "rb") as token:
+        with open("../token.pickle", "rb") as token:
             creds = pickle.load(token)
     except FileNotFoundError:
         # Create a flow instance to manage the OAuth2.0 Authorization Grant Flow steps.
         flow = InstalledAppFlow.from_client_secrets_file(
-            "client_secret.json", scopes=SCOPES
+            "../client_secret.json", scopes=SCOPES
         )
 
         # Run the flow to authorize this app and get the user credentials.
         creds = flow.run_local_server(port=8080)
 
         # Save the credentials for the next run
-        with open("token.pickle", "wb") as token:
+        with open("../token.pickle", "wb") as token:
             pickle.dump(creds, token)
 
     return creds
